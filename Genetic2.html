@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=windows-1252"></head><body>
+
+	<h1>Genetic 2</h1>
+
+	<p>This is version 2 of the genetic algorithm.  The obvious change is that it provides control over the
+	terminating condition, but it also addresses some issues with inbreeding.  Inbreeding happens when a local
+	minima is reached, and most gene changes result in a poorer performance.  This results in a convergence
+	of the individuals, as those individuals that share the most genes with the optimum individual survive. 
+	As those similar individuals end up breeding, all genes but the ones that are optimized for that local
+	minimum are selected out, leaving a population with a large number of clones.  The mutations and exogamous
+	individuals will eventually break out of the local minimum, but it may take many generations.</p><p>
+
+	</p><p>This version examines each breeding pair, and if the pair are identical, the are mutated rather
+	than bred.  Clones will still appear, but the inbreeding check will prevent them from
+	multiplying and taking over the surviving population.  The program now also tracks the history of each
+	individual, and displays it at the end, like this:</p>
+
+	<p><i>
+	Ancestry: mutated bred bred bred bred mutated mutated bred bred bred bred mutated mutated bred mutated mutated bred mutated initialized
+	</i></p>
+
+	<p>That shows the history of that individual; in that case, the path was of short length from a randomly 
+	initialized individual to the optimum, through breeding and a few mutations.  The origin will be 
+	either "initialized", indicating the individual traces its ancestry back to one of the originals, or "exogamy", 
+	meaning it was one of the random individuals added at a later generation.  There is no family tree, since 
+	individuals don't reproduce, but rather clone themselves and then engage in gene swapping, "bred" or 
+	mutation, "mutation".</p>
+
+	Allowable squared error (in pixels):  <input id="targetError" value="0.01" type="number">
+	Step delay (in ms):  <input id="timeStep" value="50" type="number">
+   	<button type="button" onclick="document.getElementById('status').innerHTML = RunGenetic();">Click to run.</button>
+   	<button type="button" onclick="document.getElementById('status').innerHTML = StopGenetic();">Click to stop.</button>
+
+	<table border="1">
+		<tbody><tr><td>
+   			<textarea id="outputTextArea" rows="30" cols="60">Output will show here.</textarea>
+		</td><td>
+			<canvas id="drawArea" width="750" height="500">Drawing area</canvas>	
+		</td></tr>
+	</tbody></table>
+
+	<script>
+
+		var outputDoc;
+		var outputCanvas;
+		var gc;
+		var targetX;
+		var targetY;
+		var bestSet;
+		var keepRunning;
+		var generations;
+		var targetError;
+		var timeStep;
+
+		// this will be an array of arrays; first index is the individual's number,
+		//  the second index will be the parameters.  Parameters are:
+		//  a, b, c, d, e, squared error, origin
+		//  origin will be a string indicating how that individual was created
+		var parameterSet;
+
+		function StopGenetic()
+		{
+			keepRunning = false;
+
+			outputDoc.innerHTML = "Best error: " + bestSet[5] + "\n";
+			outputDoc.innerHTML += "Parameter values:\n";
+			// generate 90 new individuals by mixing and mutating top 10
+			for(var i = 0; i < 5; ++i)
+			{
+				outputDoc.innerHTML += bestSet[i] + "\n";
+			}
+			
+			outputDoc.innerHTML += "Generations needed, " + generations + "\n";
+			outputDoc.innerHTML += "Ancestry: " + bestSet[6] + "\n";
+		}
+
+		function RunGenetic()
+		{
+			targetError = document.getElementById("targetError").value;
+			timeStep = document.getElementById("timeStep").value;
+			generations = 0;
+			keepRunning = true;
+			outputDoc = document.getElementById("outputTextArea");
+			outputCanvas = document.getElementById("drawArea");
+			gc = outputCanvas.getContext("2d");
+
+			gc.fillStyle = "white";
+			gc.fillRect(0, 0, 750, 500);
+
+			outputDoc.innerHTML += "In run function.\n";
+
+			// array of 100 sest of 5 parameters, plus the error and origin
+			parameterSet = new Array(100);
+			for(var i = 0; i < 100; ++i)
+			{
+				parameterSet[i] = new Array(7);
+			}
+
+			Initialize();
+			Iterate();
+		}
+
+		function Iterate()
+		{
+			if(keepRunning)http://fluzwup.ddns.net/Genetic2.html
+			{
+				Draw();
+				// if we have a best set, and it's really close, terminate
+				if(bestSet[5] > 0 && bestSet[5] < targetError)
+				{
+					StopGenetic();
+					return;
+				}
+				Evolve();
+			
+				var timerID = setTimeout(Iterate, timeStep);
+			}
+		}
+
+		// initialize parameters to +/- 100
+		function Initialize()
+		{
+			bestSet = new Array(7);
+			bestSet[0] = 0;
+			bestSet[1] = 0;
+			bestSet[2] = 0;
+			bestSet[3] = 0;
+			bestSet[4] = 0;
+			bestSet[5] = -1;  // negative error means it hasn't been set yet
+			bestSet[6] = "initialized";
+
+			targetX = Math.random() * 100 - 50;
+			targetY = Math.random() * 100 - 50;
+			for(var set = 0; set < 100; ++set)
+			{
+				for(var parameter = 0; parameter < 5; ++parameter)
+				{
+					parameterSet[set][parameter] = Math.random() * 200 - 100;
+				}
+				parameterSet[set][5] = -1;
+				parameterSet[set][6] = "initialized";
+			}
+		}
+
+		// an arbitrary function that has lots of local minima and is discontinuous
+		function BlackBoxX(a, b, c, d, e)
+		{
+			return b * Math.sin(a) + c * c - d * c + 10 * Math.round(e / 5);
+		}
+	
+		// another arbitrary function that has lots of local minima and is discontinuous
+		function BlackBoxY(a, b, c, d, e)
+		{
+			return a * Math.cos(b) + Math.sqrt(Math.abs(c)) - d * d + c * Math.round(e / 5);
+		}
+	
+		// copy parameters in set a to set b
+		function Clone(a, b)
+		{
+			for(var i = 0; i < 5; ++i)
+			{
+				parameterSet[b][i] = parameterSet[a][i];
+			}
+			parameterSet[b][6] = parameterSet[a][6];
+		}
+
+		// copy parameters from best into set a
+		function CloneBest(a)
+		{
+			for(var i = 0; i < 5; ++i)
+			{
+				parameterSet[a][i] = bestSet[i];
+			}
+			parameterSet[a][6] = bestSet[6];
+		}
+
+		// randomly swap parameters between sets a and b
+		function Breed(a, b)
+		{
+			// check for clones, to prevent inbreeding; also, if there is only one gene
+			//  difference, that would just result in swapping the two individuals, so 
+			//  check for at least 2 genes different
+			var clone = 0;
+			for(var i = 0; i < 5; ++i)
+			{
+				if(parameterSet[a][i] != parameterSet[b][i])
+				{
+					++clone;
+				}
+			}
+			if(clone > 3)
+			{
+				outputDoc.innerHTML += "Individuals too close to breed, mutating instead.\n";
+				// mutate both
+				Mutate(a);
+				Mutate(b);
+				return;
+			}
+
+			// make sure an exchange happens
+			var bred = false;
+			var attempt = 0;
+			while(!bred && attempt < 10)
+			{
+				++attempt;
+				// go through each parameter
+				for(var i = 0; i < 5; ++i)
+				{
+					// make sure the genes we're flipping differ
+					if(parameterSet[a][i] != parameterSet[b][i])
+					{
+						// flip a coin to decide if these parameters swap
+						if(Math.random() > 0.5)
+						{
+							var temp = parameterSet[a][i];
+							parameterSet[a][i] = parameterSet[b][i];
+							parameterSet[b][i] = temp;
+							bred = true;
+							parameterSet[a][6] = "bred " + parameterSet[a][6];
+							parameterSet[b][6] = "bred " + parameterSet[b][6];
+						}
+					}
+				}
+			}
+			// if breeding was unsuccessful, mutate instead
+			if(!bred)
+			{
+				outputDoc.innerHTML += "Breeding failed, mutating instead.\n";
+				Mutate(a);
+				Mutate(b);
+			}
+		}
+
+		// randomly adjust parameters by a smallish amount
+		function Mutate(a)
+		{
+			// go through each parameter
+			for(var i = 0; i < 5; ++i)
+			{
+				// flip a coin to decide if the parameter changes
+				var flip = Math.random();
+				// 50% chance of a small mutation, +/- 0.5
+				if(flip > 0.5)
+				{
+					parameterSet[a][i] += (Math.random() - 0.5);
+				}
+				// 10% chance of a big mutation, +/- 500 
+				if(flip < 0.1)
+				{
+					parameterSet[a][i] += (1000 * Math.random() - 500);
+				}
+			}
+			parameterSet[a][6] = "mutated " + parameterSet[a][6];
+		}
+
+		// function to sort lowest error into index 0 of array
+		//  error is parameter 5
+		function compareError(a, b)
+		{
+			// return less than 0 if a < b
+			return a[5] - b[5];
+		}
+
+		// keep the fittest, kill the rest, breed and mutate the survivors to make more
+		function Evolve()
+		{
+			++generations;
+			// sort the individuals by error, put the best in the low indicies
+			parameterSet.sort(compareError);
+
+			// see if we've beat the best set; if we haven't picked one, index 0 is best
+			if(bestSet[5] < 0 || parameterSet[0][5] < bestSet[5])
+			{
+				bestSet[0] = parameterSet[0][0];
+				bestSet[1] = parameterSet[0][1];
+				bestSet[2] = parameterSet[0][2];
+				bestSet[3] = parameterSet[0][3];
+				bestSet[4] = parameterSet[0][4];
+				bestSet[5] = parameterSet[0][5];
+				bestSet[6] = parameterSet[0][6];
+			}
+
+			outputDoc.innerHTML = "Best: " + bestSet[5] + "\n";
+			outputDoc.innerHTML += "Generation " + generations + " survivors:\n";
+			// generate 90 new individuals by mixing and mutating top 10
+			outputDoc.innerHTML += "Error: " + parameterSet[0][5] + "\n";
+			for(var i = 1; i < 10; ++i)
+			{
+				outputDoc.innerHTML += "Error: " + parameterSet[i][5];
+				if(
+					parameterSet[i][5] != parameterSet[0][5] ||
+					parameterSet[i][4] != parameterSet[0][4] ||
+					parameterSet[i][3] != parameterSet[0][3] ||
+					parameterSet[i][2] != parameterSet[0][2] ||
+					parameterSet[i][1] != parameterSet[0][1] ||
+					parameterSet[i][0] != parameterSet[0][0]
+				)
+				{
+					outputDoc.innerHTML += "\n";
+				}
+				else
+				{
+					outputDoc.innerHTML += ", clone\n";
+				}
+			}
+
+			// start from bottom, fill up to 0 so we keep the top 10
+			// 5 mutants of best
+			outputDoc.innerHTML += "5 mutants of best set\n";
+			var i = 99;
+			for(var j = 0; j < 5; ++j)
+			{
+				CloneBest(i);
+				Mutate(i);
+				--i;
+			}
+			// i should be 94
+			// 20 breeds of best with top 10
+			outputDoc.innerHTML += "20 hybrids of best and each of top 10\n";
+			for(var j = 0; j < 10; ++j)
+			{
+				CloneBest(i);
+				Clone(j, i - 1);
+				Breed(i, i - 1);
+				i -= 2;
+			}
+			// i should be 74
+			// 50 breeds of random top 10
+			outputDoc.innerHTML += "50 hybrids between random pairs of top 10\n";
+			for(var j = 0; j < 25; ++j)
+			{
+				// pick 2 different sources
+				var source1 = Math.trunc(Math.random() * 10);
+				var source2 = source1;
+			   	while(source2 == source1) source2 = Math.trunc(Math.random() * 10);
+
+				Clone(source1, i);
+				Clone(source2, i - 1);
+				Breed(i, i - 1);
+				i -= 2;
+			}
+			// i should be 24
+			// 5 new random individuals
+			outputDoc.innerHTML += "5 completely new random individuals\n";
+			for(var j = 0; j < 5; ++j)
+			{
+				for(var parameter = 0; parameter < 5; ++parameter)
+				{
+					parameterSet[i][parameter] = Math.random() * 200 - 100;
+				}
+				parameterSet[i][6] = "exogamy";
+				--i;
+			}
+			// i should be 19
+			// 20 mutants of top 10
+			outputDoc.innerHTML += "20 mutations of top 10 individuals\n";
+			for(var j = 0; j < 10; ++j)
+			{
+				// copy top 10 element into element 10 down
+				Clone(i - 10, i);
+				// mutate daughter
+				Mutate(i);
+				--i;
+			}
+			// i should be 9
+			for(var j = 0; j < 10; ++j)
+			{
+				Mutate(i);
+				--i;
+			}
+			// i should be -1
+		}
+
+		function Draw()
+		{
+			// clear and draw target
+			gc.fillStyle = "white";
+			gc.fillRect(0, 0, 750, 500);
+
+			gc.fillStyle = "red";
+			gc.fillRect(targetX - 5 + 375, targetY - 5 + 250, 10, 10);
+
+			gc.fillStyle = "black";
+			// plot points and calculate error
+			for(i = 0; i < 100; ++i)
+			{
+				var x = BlackBoxX(parameterSet[i][0],
+								parameterSet[i][1],
+								parameterSet[i][2],
+								parameterSet[i][3],
+								parameterSet[i][4]);
+
+				var y = BlackBoxY(parameterSet[i][0],
+								parameterSet[i][1],
+								parameterSet[i][2],
+								parameterSet[i][3],
+								parameterSet[i][4]);
+
+				// squared error works, since all we care about is who's closer
+				parameterSet[i][5] = Math.pow(targetX - x, 2) + Math.pow(targetY - y, 2);
+
+				// clip x and y to range
+				if(x < -374) x = -374;
+				if(x > 374) x = 374;
+				if(y < -249) y = -249;
+				if(y > 249) y = 249;
+
+				gc.fillRect(x - 2 + 375, y - 2 + 250, 4, 4);
+
+				// TODO:  if the target isn't within the convex hull of the data set, then a 
+				//  solution might be unreachable
+			}
+		}
+	
+	</script>
+
+	
+
+
+
+
+</body></html>
